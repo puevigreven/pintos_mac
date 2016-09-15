@@ -71,6 +71,13 @@ static void schedule (void);
 void thread_schedule_tail (struct thread *prev);
 static tid_t allocate_tid (void);
 
+
+static struct list_elem *
+list_pop_highest_priority (struct list *list);
+static struct list_elem *
+list_highest (struct list *list);
+
+
 /* Initializes the threading system by transforming the code
    that's currently running into a thread.  This can't work in
    general and it is possible in this case only because loader.S
@@ -495,9 +502,41 @@ next_thread_to_run (void)
 {
   if (list_empty (&ready_list))
     return idle_thread;
-  else
+  else{    
     return list_entry (list_pop_front (&ready_list), struct thread, elem);
+
+ //return list_entry (list_pop_highest_priority (&ready_list), struct thread, elem);
 }
+}
+
+
+static struct list_elem *
+list_pop_highest_priority (struct list *list)
+{
+  struct list_elem *front = list_highest (list);
+  list_remove (front);
+  return front;
+}
+
+static struct list_elem *
+list_highest (struct list *list)
+{
+  ASSERT (!list_empty (list));
+  int max=0;
+  struct thread* ans;
+  struct list_elem *temp;
+  struct list_elem *e =list_begin(list);
+  temp =e;
+  for ( ; e != list_end (list); e=e->next){
+      struct thread* temp1 = list_entry(e, struct thread, elem);
+    if(temp1->priority > max){
+      max = temp1->priority;
+      temp = e;
+    }
+  }
+  return temp;
+}
+
 
 /* Completes a thread switch by activating the new thread's page
    tables, and, if the previous thread is dying, destroying it.
