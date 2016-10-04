@@ -70,13 +70,7 @@ static void *alloc_frame (struct thread *, size_t size);
 static void schedule (void);
 void thread_schedule_tail (struct thread *prev);
 static tid_t allocate_tid (void);
-
-
-static struct list_elem *
-list_pop_highest_priority (struct list *list);
-static struct list_elem *
-list_highest (struct list *list);
-
+static bool thread_sort_less (const struct list_elem *lhs, const struct list_elem *rhs, void *aux UNUSED);
 
 /* Initializes the threading system by transforming the code
    that's currently running into a thread.  This can't work in
@@ -160,7 +154,8 @@ thread_print_stats (void)
    for the new thread, or TID_ERROR if creation fails.
 
    If thread_start() has been called, then the new thread may be
-   scheduled before thread_create() returns.  It could even exit
+   scheduled before 
+   thread_create() returns.  It could even exit
    before thread_create() returns.  Contrariwise, the original
    thread may run for any amount of time before the new thread is
    scheduled.  Use a semaphore or some other form of
@@ -329,6 +324,26 @@ thread_yield (void)
   intr_set_level (old_level);
 }
 
+void
+thread_yield_head (struct thread *cur)
+{
+  enum intr_level old_level;
+  
+  ASSERT (!intr_context ());
+
+  old_level = intr_disable ();
+  if (cur != idle_thread)
+    /* Old Implementation*/
+    list_push_back (&ready_list, &cur->elem);
+    /* My Implementation */
+    //list_insert_ordered (&ready_list, &cur->elem, thread_insert_less_head, NULL);
+    /* == My Implementation */
+  cur->status = THREAD_READY;
+  schedule ();
+  intr_set_level (old_level);
+}
+
+
 /* Invoke function 'func' on all threads, passing along 'aux'.
    This function must be called with interrupts off. */
 void
@@ -350,7 +365,54 @@ thread_foreach (thread_action_func *func, void *aux)
 void
 thread_set_priority (int new_priority) 
 {
-  thread_current ()->priority = new_priority;
+  //thread_current ()->priority = new_priority;
+  struct thread *curr;  
+  curr=thread_current();
+  
+  if(curr->base_priority!=curr->priority){
+    curr->base_priority=new_priority;
+  }else{
+    curr->priority = new_priority;
+    curr->base_priority=new_priority;
+  }  
+}
+
+/* Sets the passed thread's priority to NEW_PRIORITY. */
+void
+thread_set_priority_other (struct thread *curr, int new_priority)
+{
+
+  if(!curr->donated){
+    curr->base_priority=new_priority;
+  }else{
+    curr->priority = new_priority;
+    curr->base_priority=new_priority;
+  }  
+}
+
+/* 
+ * Making sort stable and having outstanding priority at the head of the list
+ */
+ 
+static bool
+thread_sort_less (const struct list_elem *lhs, const struct list_elem *rhs, void *aux UNUSED)
+{
+  struct thread *a, *b;
+  
+  ASSERT (lhs != NULL && rhs != NULL);
+  
+  a = list_entry (lhs, struct thread, elem);
+  b = list_entry (rhs, struct thread, elem);
+  
+  return (a->priority >= b->priority);
+}
+
+void
+sort_thread_list (struct list *l)
+{
+  if (list_empty (l))
+    return;
+  list_sort (l, thread_sort_less, NULL);
 }
 
 /* Returns the current thread's priority. */
@@ -477,6 +539,11 @@ init_thread (struct thread *t, const char *name, int priority)
   t->priority = priority;
   t->magic = THREAD_MAGIC;
   list_push_back (&all_list, &t->allelem);
+  
+  t->base_priority=priority; /*initially before_donate priority set as initial priority */
+  list_init (&t->locks);
+  t->donated = false;
+  
 }
 
 /* Allocates a SIZE-byte frame at the top of thread T's stack and
@@ -492,6 +559,24 @@ alloc_frame (struct thread *t, size_t size)
   return t->stack;
 }
 
+/* pops the highest priority elem from the list */
+static struct list_elem * 
+list_max_priority(struct list *list) {
+  struct list_elem *max=list_begin(list);
+  struct list_elem *e=list_begin(list);
+  int max_priority=list_entry(e, struct thread, elem)->priority;  
+  while(e!=list_end(list)){
+    struct thread *t =list_entry(e, struct thread, elem);
+    if(t->priority>max_priority){
+      max=e;
+      max_priority=t->priority;
+    }
+    e=e->next;
+  }
+  list_remove(max);
+  return max;
+}
+
 /* Chooses and returns the next thread to be scheduled.  Should
    return a thread from the run queue, unless the run queue is
    empty.  (If the running thread can continue running, then it
@@ -502,41 +587,10 @@ next_thread_to_run (void)
 {
   if (list_empty (&ready_list))
     return idle_thread;
-  else{    
-    return list_entry (list_pop_front (&ready_list), struct thread, elem);
-
- //return list_entry (list_pop_highest_priority (&ready_list), struct thread, elem);
+  else
+    return list_entry (list_max_priority(&ready_list), struct thread, elem);
+    //return list_entry (list_pop_front (&ready_list), struct thread, elem);
 }
-}
-
-
-static struct list_elem *
-list_pop_highest_priority (struct list *list)
-{
-  struct list_elem *front = list_highest (list);
-  list_remove (front);
-  return front;
-}
-
-static struct list_elem *
-list_highest (struct list *list)
-{
-  ASSERT (!list_empty (list));
-  int max=0;
-  struct thread* ans;
-  struct list_elem *temp;
-  struct list_elem *e =list_begin(list);
-  temp =e;
-  for ( ; e != list_end (list); e=e->next){
-      struct thread* temp1 = list_entry(e, struct thread, elem);
-    if(temp1->priority > max){
-      max = temp1->priority;
-      temp = e;
-    }
-  }
-  return temp;
-}
-
 
 /* Completes a thread switch by activating the new thread's page
    tables, and, if the previous thread is dying, destroying it.
