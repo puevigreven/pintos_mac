@@ -19,11 +19,10 @@ void test_helloworld (void) {
 	const char *strings[] ={"A","B","C","D","E"};
 //	for(i =0;i<5;i++){
 		thread_create("A", 19, Name_thread, NULL);
-		thread_create("B", 21, Name_thread_1, NULL);
+		thread_create("B", 21, Name_thread, NULL);
 		thread_create("C", 13, Name_thread, NULL);
 		thread_create("D", 15, Name_thread, NULL);
 		thread_create("E", 17, Name_thread, NULL);
-
 //	}
 }
 
